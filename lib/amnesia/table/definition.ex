@@ -60,28 +60,30 @@ defmodule Amnesia.Table.Definition do
 
   @doc false
   def define(database, name, attributes, opts \\ []) do
-    if length(attributes) <= 1 do
-      raise ArgumentError, message: "the table attributes must be more than 1"
-    end
-
     block = Keyword.get(opts, :do, nil)
     opts  = Keyword.delete(opts, :do)
     index = Keyword.get(opts, :index, [])
 
-    { autoincrement, attributes } = Enum.reduce attributes, { [], [] }, fn
-      { name, { :autoincrement, _, _ } }, { autoincrement, attributes } ->
-        { [name | autoincrement], attributes ++ [{ name, nil }] }
-
-      { name, value }, { autoincrement, attributes } ->
-        { autoincrement, attributes ++ [{ name, value }] }
-
-      name, { autoincrement, attributes } ->
-        { autoincrement, attributes ++ [{ name, nil }] }
-    end
-
     quote do
+      attributes = unquote(attributes)
+
+      if length(attributes) <= 1 do
+        raise ArgumentError, message: "the table attributes must be more than 1"
+      end
+
+      { autoincrement, attributes } = Enum.reduce attributes, { [], [] }, fn
+        { name, :autoincrement }, { autoincrement, attributes } ->
+          { [name | autoincrement], attributes ++ [{ name, nil }] }
+
+        { name, value }, { autoincrement, attributes } ->
+          { autoincrement, attributes ++ [{ name, value }] }
+
+        name, { autoincrement, attributes } ->
+          { autoincrement, attributes ++ [{ name, nil }] }
+      end
+
       defmodule unquote(name) do
-        defstruct unquote(attributes)
+        defstruct attributes
 
         use Amnesia.Hooks, write: 1, write!: 1, read: 2, read!: 2
         require Exquisite
@@ -90,13 +92,17 @@ defmodule Amnesia.Table.Definition do
         alias Amnesia.Table.Definition, as: D
         alias Amnesia.Selection, as: S
 
+        require Amnesia.Table.Coercer
+        use Amnesia.Table.Coercer, name: unquote(name), attributes: attributes        
+
         @type autoincrement :: non_neg_integer
 
         @database      unquote(database)
         @options       unquote(opts)
-        @autoincrement unquote(autoincrement)
-        @attributes    unquote(attributes)
+        @autoincrement autoincrement
+        @attributes    attributes
         @index         unquote(index)
+        @id            (attributes |> Enum.at(0) |> elem(0))
 
         @doc """
         Require the needed modules to use the table effectively.
@@ -137,40 +143,7 @@ defmodule Amnesia.Table.Definition do
         """
         @spec id :: atom
         def id do
-          unquote(attributes |> Enum.at(0) |> elem(0))
-        end
-
-        @doc false
-        def coerce(unquote({ :%, [], [{ :__MODULE__, [], nil }, { :%{}, [],
-          for { key, _ } <- attributes do
-            { key, { key, [], nil } }
-          end
-        }] })) do
-          unquote({ :{}, [], [name |
-            for { key, _ } <- attributes do
-              { key, [], nil }
-            end
-          ] })
-        end
-
-        def coerce(unquote({ :{}, [], [name |
-          for { key, _ } <- attributes do
-            { key, [], nil }
-          end
-        ] })) do
-          unquote({ :%, [], [{ :__MODULE__, [], nil }, { :%{}, [],
-            for { key, _ } <- attributes do
-              { key, { key, [], nil } }
-            end
-          }] })
-        end
-
-        def coerce(list) when list |> is_list do
-          Enum.map(list, &coerce/1)
-        end
-
-        def coerce(value) do
-          value
+          @id
         end
 
         @doc """
@@ -537,7 +510,7 @@ defmodule Amnesia.Table.Definition do
         Return the key of the record.
         """
         @spec key(t) :: any
-        def key(%__MODULE__{unquote(Enum.at(attributes, 0) |> elem(0)) => key}) do
+        def key(%__MODULE__{@id => key}) do
           key
         end
 

@@ -15,7 +15,7 @@ defdatabase Test.Database do
     end
   end
 
-  deftable User, [{ :id, autoincrement }, :name, :email], type: :ordered_set, index: [:email] do
+  deftable User, [{ :id, :autoincrement }, :name, :email], type: :ordered_set, index: [:email] do
     def add_message(self, content) do
       %Message{user_id: self.id, content: content} |> Message.write
     end
